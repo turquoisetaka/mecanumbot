@@ -29,7 +29,7 @@ target_include_directories(MecanumBot PUBLIC ${CMAKE_CURRENT_LIST_DIR} ${CMAKE_C
 pico_enable_stdio_usb(MecanumBot 0)
 pico_enable_stdio_uart(MecanumBot 1)
 
-target_link_libraries(MecanumBot pico_stdlib 
+target_link_libraries(MecanumBot PUBLIC pico_stdlib 
 tinyusb_host tinyusb_board 
 hardware_timer hardware_pwm
 )
