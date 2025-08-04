@@ -44,6 +44,7 @@ typedef struct {
 
 typedef struct {
     volatile int current_speed, current_delay_us, accumulated_us, direction, step_pin_state, default_direction; 
+    const char* name;
 } WheelState; 
 
 
@@ -54,22 +55,34 @@ MotionInput currentInput;
 
 WheelState wheelFL, wheelFR, wheelRL, wheelRR;
 
-#define INIT_LEFTWHEEL(X) WheelState X = {.current_delay_us = 400, .default_direction = 0}
-#define INIT_RIGHTWHEEL(X) WheelState X = {.current_delay_us = 400, .default_direction = 1}
-
 void init_wheelState() {
-    INIT_LEFTWHEEL(wheelFL);
-    INIT_LEFTWHEEL(wheelRL);
-    INIT_RIGHTWHEEL(wheelFR);
-    INIT_RIGHTWHEEL(wheelRR);
+    wheelFL = (WheelState){.current_delay_us = 400, .default_direction = 0, .name="Front Left"};
+    wheelRL = (WheelState){.current_delay_us = 400, .default_direction = 0, .name="Rear Left"};
+    wheelFR = (WheelState){.current_delay_us = 400, .default_direction = 1, .name="Front Right"};
+    wheelRR = (WheelState){.current_delay_us = 400, .default_direction = 1, .name="Rear Right"};
 }
 
-//delay = pi*D / V * s where s is steps per rev
+void printInputState() {
+    TU_LOG1("x: %f, y: %f, z: %f\n", currentInput.x, currentInput.y, currentInput.w);
+}
+
+void printWheelState(WheelState* w) {
+    TU_LOG1("Wheel:%s Speed: %f, Delay: , Direction:%d\n", w->name, w->current_speed, w->current_delay_us, w->direction);
+}
+
+void printBotState() {
+    printWheelState(&wheelFL);
+    printWheelState(&wheelRL);
+    printWheelState(&wheelRR);
+    printWheelState(&wheelFR);
+}
+
+//delay = pi*D / V * s where s is steps per rev(WheelState)
 void update_wheel_delay(WheelState* w) {
     if(w->current_speed < 0.01) {
         w->current_delay_us = -1;
     } else {
-        w->current_delay_us = 1e6*(M_PI*WHEEL_DIAMETER)/(wheelFL.current_speed * (float)STEPS_PER_REV);
+        w->current_delay_us = 1e6*(M_PI*WHEEL_DIAMETER)/(w->current_speed * (float)STEPS_PER_REV);
     }
 }
 
@@ -158,9 +171,7 @@ bool init_pwm_isr_timer() {
 
 //scale the speed command to the maximum possible speed in m/s
 float normalize_axis(int16_t value) {
-    
-    if ( -1*DEADZONE < value < DEADZONE ) { return 0.0f; TU_LOG1("Returned 0");}
-    TU_LOG1("%f", MAX_WHEEL_SPEED * (float)value / AXIS_MAX);
+    if ( (-1*DEADZONE < value) && (value < DEADZONE) ) { return 0.0f;}
     return MAX_WHEEL_SPEED * (float)value / AXIS_MAX;
 }
 
@@ -169,10 +180,11 @@ void handle_gamepad_input(const xinput_gamepad_t* p) {
     currentInput.y = normalize_axis(p->sThumbLY);
     currentInput.w = normalize_axis(p->sThumbRX);
     //TU_LOG1("LX: %d, LY: %d, RX: %d, RY: %d\n", p->sThumbLX, p->sThumbLY, p->sThumbRX, p->sThumbRY);
-    TU_LOG1("x: %f, y: %f, z: %f, testval: %f\n", normalize_axis(p->sThumbLX), normalize_axis(p->sThumbLY), normalize_axis(p->sThumbRX), normalize_axis(2000.0f));
+    //TU_LOG1("x: %f, y: %f, z: %f\n", normalize_axis(p->sThumbLX), normalize_axis(p->sThumbLY), normalize_axis(p->sThumbRX));
+
+    printBotState();
+    printInputState();
 }
-
-
 
 
 usbh_class_driver_t const* usbh_app_driver_get_cb(uint8_t* driver_count){
@@ -244,10 +256,8 @@ int main() {
     tuh_init(BOARD_TUH_RHPORT);
 
     board_init();
-
     init_wheelState();
-    init_pwm_isr_timer();
-
+    //init_pwm_isr_timer();
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
     gpio_put(25, true);
