@@ -26,7 +26,7 @@
 #define MAX_WHEEL_SPEED 3.14f*WHEEL_DIAMETER*(1000000.0f)/((float)MIN_STEP_DELAY*(float)STEPS_PER_REV)
 
 //actual min is 300 but I want the min to be divisible by the control tick value
-#define MIN_STEP_DELAY 400
+#define MIN_STEP_DELAY 300
 
 
 // define control tick in microseconds and clkdiv as any int to calculate wrap val
@@ -43,7 +43,8 @@ typedef struct {
 } MotionInput;
 
 typedef struct {
-    volatile int current_speed, current_delay_us, accumulated_us, direction, step_pin_state, default_direction; 
+    volatile float current_speed; 
+    volatile int current_delay_us, accumulated_us, direction, step_pin_state, default_direction; 
     const char* name;
 } WheelState; 
 
@@ -67,7 +68,7 @@ void printInputState() {
 }
 
 void printWheelState(WheelState* w) {
-    TU_LOG1("Wheel:%s Speed: %f, Delay: , Direction:%d\n", w->name, w->current_speed, w->current_delay_us, w->direction);
+    TU_LOG1("Wheel:%s Speed: %f, Delay: %d, Direction:%d\n", w->name, w->current_speed, w->current_delay_us, w->direction);
 }
 
 void printBotState() {
@@ -80,7 +81,7 @@ void printBotState() {
 //delay = pi*D / V * s where s is steps per rev(WheelState)
 void update_wheel_delay(WheelState* w) {
     if(w->current_speed < 0.01) {
-        w->current_delay_us = -1;
+        w->current_delay_us = -1.0;
     } else {
         w->current_delay_us = 1e6*(M_PI*WHEEL_DIAMETER)/(w->current_speed * (float)STEPS_PER_REV);
     }
@@ -107,10 +108,13 @@ void set_direction(WheelState* w) {
 //calculate control signal strength and scale everything down if it's over the max speed
 //also set wheel direction
 void update_wheel_speeds() {
+
     wheelFL.current_speed = currentInput.y - currentInput.x - (WHEEL_DIAMETER*currentInput.w);
     wheelRL.current_speed = currentInput.y + currentInput.x - (WHEEL_DIAMETER*currentInput.w);
     wheelRR.current_speed = currentInput.y - currentInput.x + (WHEEL_DIAMETER*currentInput.w);
     wheelFR.current_speed = currentInput.y + currentInput.x + (WHEEL_DIAMETER*currentInput.w);
+
+    
 
     // I want all wheel speeds to be positive so I'm going to set the direction here
     set_direction(&wheelFL);
@@ -120,8 +124,11 @@ void update_wheel_speeds() {
 
     float wheelSpeeds[4] = {wheelFL.current_speed, wheelRL.current_speed, wheelRR.current_speed, wheelFR.current_speed};
     float scalar = 1.0f;
+    float maxWheelSpeed = MAX_WHEEL_SPEED;
     for(int i = 0; i < 4; i++) {
-        float tempScalar = wheelSpeeds[i] / MAX_WHEEL_SPEED;
+        
+        float tempScalar = wheelSpeeds[i] / maxWheelSpeed;
+        //TU_LOG1("tempscalar: %f wheelSpeed: %f maxspeed: %f\n", tempScalar, wheelSpeeds[i], MAX_WHEEL_SPEED);
         if(tempScalar > 1.0f && tempScalar > scalar) {
             scalar = tempScalar;
         }
@@ -257,10 +264,14 @@ int main() {
 
     board_init();
     init_wheelState();
-    //init_pwm_isr_timer();
+    init_pwm_isr_timer();
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
     gpio_put(25, true);
+
+    volatile void* dummy_tick_ref = (void*)control_tick;
+
+    TU_LOG1("Max wheel speed %f:\n", MAX_WHEEL_SPEED);
 
     while(1) {
         tuh_task();

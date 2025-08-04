@@ -4,6 +4,7 @@ set(PICO_BOARD pico2)
 set(PICO_PLATFORM rp2350)
 set(CMAKE_C_STANDARD 11)
 
+set(CMAKE_BUILD_TYPE Debug)
 
 
 include(pico_sdk_import.cmake)
@@ -15,6 +16,9 @@ pico_sdk_init()
 add_executable(MecanumBot)
 
 add_library(xinput_host INTERFACE)
+
+target_compile_options(MecanumBot PRIVATE -O0 -g)
+
 
 target_sources(MecanumBot PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/main.c
