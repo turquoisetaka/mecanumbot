@@ -26,7 +26,7 @@
 #define MAX_WHEEL_SPEED 3.14f*WHEEL_DIAMETER*(1000000.0f)/((float)MIN_STEP_DELAY*(float)STEPS_PER_REV)
 
 //actual min is 300 but I want the min to be divisible by the control tick value
-#define MIN_STEP_DELAY 300
+#define MIN_STEP_DELAY 400
 
 
 // define control tick in microseconds and clkdiv as any int to calculate wrap val
@@ -34,7 +34,7 @@
 #define CONTROL_TICK_US 200
 #define CONTROL_PWM_GPIO 15
 #define CONTROL_PWM_SLICE pwm_gpio_to_slice_num(CONTROL_PWM_GPIO)
-#define CONTROL_CLKDIV 5
+#define CONTROL_CLKDIV 50
 #define SYSCLOCK_IN_MHZ 150
 #define CONTROL_WRAP 1 + (150*CONTROL_TICK_US)/CONTROL_CLKDIV
 
@@ -45,6 +45,7 @@ typedef struct {
 typedef struct {
     volatile float current_speed; 
     volatile int current_delay_us, accumulated_us, direction, step_pin_state, default_direction; 
+    int StepPin, DirPin;
     const char* name;
 } WheelState; 
 
@@ -57,10 +58,10 @@ MotionInput currentInput;
 WheelState wheelFL, wheelFR, wheelRL, wheelRR;
 
 void init_wheelState() {
-    wheelFL = (WheelState){.current_delay_us = 400, .default_direction = 0, .name="Front Left"};
-    wheelRL = (WheelState){.current_delay_us = 400, .default_direction = 0, .name="Rear Left"};
-    wheelFR = (WheelState){.current_delay_us = 400, .default_direction = 1, .name="Front Right"};
-    wheelRR = (WheelState){.current_delay_us = 400, .default_direction = 1, .name="Rear Right"};
+    wheelFL = (WheelState){.current_delay_us = 400, .default_direction = 0, .name="Front Left", .StepPin = 2, .DirPin = 3};
+    wheelRL = (WheelState){.current_delay_us = 400, .default_direction = 0, .name="Rear Left", .StepPin = 4, .DirPin = 5};
+    wheelFR = (WheelState){.current_delay_us = 400, .default_direction = 1, .name="Front Right", .StepPin = 6, .DirPin = 7};
+    wheelRR = (WheelState){.current_delay_us = 400, .default_direction = 1, .name="Rear Right", .StepPin = 8, .DirPin = 9};
 }
 
 void printInputState() {
@@ -142,6 +143,25 @@ void update_wheel_speeds() {
 
 }
 
+void tick_wheel(WheelState* w) {
+    w->accumulated_us += CONTROL_TICK_US;
+    if(w->current_delay_us <= 0){return;}
+    if(w->accumulated_us>w->current_delay_us) {
+        w->step_pin_state = !w->step_pin_state;
+        gpio_put(w->DirPin, w->direction);
+        gpio_put(w->StepPin,w->step_pin_state);
+        w->accumulated_us = w->accumulated_us % w->current_delay_us;   
+    }
+
+}
+
+void tick_wheels() {
+    tick_wheel(&wheelFL);
+    tick_wheel(&wheelRL);
+    tick_wheel(&wheelRR);
+    tick_wheel(&wheelFR);
+}
+
 void control_tick() {
     //perform motor logic and stepping here
 
@@ -150,11 +170,12 @@ void control_tick() {
     update_all_wheel_delays(); //update directions and delays
 
     // HANDLE ZERO WHEEL SPEEDS (delay is set to -1)
-
-    //accumulate time   
-    //check timers and toggle step output pins and set direction pins
+    //
+    //accumulate time, check timers and toggle step output pins and set direction pins
     //reset timers if they have been triggered
-
+    tick_wheels();
+    //TU_LOG1("%d %d\n", wheelFL.current_delay_us, wheelFL.current_speed);
+    //TU_LOG1("%d %d\n", wheelFL.step_pin_state, wheelFL.direction);
 }
 
 //process pwm isr -> call control handler
@@ -164,7 +185,7 @@ void __isr pwm_wrap_isr(void) {
 }
 
 //initialize pwm loop to call the motor handler
-bool init_pwm_isr_timer() {
+bool init_pwm_isr_timer() { 
     pwm_config config = pwm_get_default_config();
     pwm_config_set_clkdiv(&config, CONTROL_CLKDIV);
     pwm_config_set_wrap(&config, CONTROL_WRAP);
@@ -189,10 +210,17 @@ void handle_gamepad_input(const xinput_gamepad_t* p) {
     //TU_LOG1("LX: %d, LY: %d, RX: %d, RY: %d\n", p->sThumbLX, p->sThumbLY, p->sThumbRX, p->sThumbRY);
     //TU_LOG1("x: %f, y: %f, z: %f\n", normalize_axis(p->sThumbLX), normalize_axis(p->sThumbLY), normalize_axis(p->sThumbRX));
 
-    printBotState();
-    printInputState();
+    //printBotState();
+    //printInputState();
+
 }
 
+void init_wheelGPIO(WheelState* w) {
+    gpio_init(w->StepPin);
+    gpio_init(w->DirPin);
+    gpio_set_dir(w->StepPin, GPIO_OUT);
+    gpio_set_dir(w->DirPin, GPIO_OUT);
+}
 
 usbh_class_driver_t const* usbh_app_driver_get_cb(uint8_t* driver_count){
     *driver_count = 1;
@@ -264,6 +292,12 @@ int main() {
 
     board_init();
     init_wheelState();
+
+    init_wheelGPIO(&wheelFL);
+    init_wheelGPIO(&wheelFR);
+    init_wheelGPIO(&wheelRR);
+    init_wheelGPIO(&wheelRL);
+    
     init_pwm_isr_timer();
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
@@ -271,10 +305,11 @@ int main() {
 
     volatile void* dummy_tick_ref = (void*)control_tick;
 
-    TU_LOG1("Max wheel speed %f:\n", MAX_WHEEL_SPEED);
+    TU_LOG1("Max wheel speed %f: Control Wrap:%d\n", MAX_WHEEL_SPEED, CONTROL_WRAP);
 
     while(1) {
         tuh_task();
+        //TU_LOG1("1");
     }
     return 0;
 }
